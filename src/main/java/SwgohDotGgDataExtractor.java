@@ -1,3 +1,8 @@
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -16,10 +21,14 @@ import org.apache.http.util.EntityUtils;
 public class SwgohDotGgDataExtractor {
     private List<Character> characters;
     private String swgohUsername;
+    private String outputFilePath;
+    private boolean shouldSendToClipboard;
 
-    public SwgohDotGgDataExtractor(String swgohUsername) {
+    public SwgohDotGgDataExtractor(String swgohUsername, String outputFilePath, boolean shouldSendToClipboard) {
         this.swgohUsername = swgohUsername;
         characters = new ArrayList<Character>();
+        this.outputFilePath = outputFilePath;
+        this.shouldSendToClipboard = shouldSendToClipboard;
     }
 
     public void process() {
@@ -52,6 +61,47 @@ public class SwgohDotGgDataExtractor {
 //            System.out.println(m.group());
             getCharacter(character);
         }
+
+        if (outputFilePath != null) {
+            writeOutputFile();
+        } else if (shouldSendToClipboard) {
+            sendToClipboard();
+        }
+    }
+
+    private void sendToClipboard() {
+        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+        StringSelection selection;
+
+        StringBuilder stringBuilder = new StringBuilder();
+        for (Character character : characters) {
+            stringBuilder.append(String.format("%s\t%d\t%d\t%d\t%d\n", character.name, character.power, character.level, character.gearTier, character.rarity));
+        }
+
+        selection = new StringSelection(stringBuilder.toString());
+
+        clipboard.setContents(selection, selection);
+
+        System.out.println("** Data copied to clipboard. **");
+    }
+
+    private void writeOutputFile() {
+        try {
+            File outputFile = new File(outputFilePath);
+            FileOutputStream fileOutputStream = new FileOutputStream(outputFile);
+
+            try {
+                for (Character character : characters) {
+                    fileOutputStream.write(String.format("%s\t%d\t%d\t%d\t%d\n", character.name, character.power, character.level, character.gearTier, character.rarity).getBytes());
+                }
+            } finally {
+                fileOutputStream.close();
+            }
+        } catch (Exception e) {
+            System.out.println("Exception caught writing output file \"" + outputFilePath + "\"");
+            e.printStackTrace();
+            return;
+        }
     }
 
     private void getCharacter(Character character) {
@@ -65,9 +115,10 @@ public class SwgohDotGgDataExtractor {
             HttpResponse response = httpClient.execute(httpGet);
             HttpEntity entity = response.getEntity();
             body = EntityUtils.toString(entity);
-        }
-        catch (Exception e) {
-
+        } catch (Exception e) {
+            System.out.println("Exception caught reading character \"" + character.name + "\"");
+            e.printStackTrace();
+            return;
         }
 
         character.name = getName(body);
@@ -77,6 +128,7 @@ public class SwgohDotGgDataExtractor {
             character.gearTier = getGearTier(body);
             character.level = getLevel(body);
             character.rarity = getRarity(body);
+
             System.out.printf("%s\t%d\t%d\t%d\t%d\n", character.name, character.power, character.level, character.gearTier, character.rarity);
         } else {
             characters.remove(character);
